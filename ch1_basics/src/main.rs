@@ -1,4 +1,9 @@
-use std::thread;
+use std::{
+    thread,
+    sync::{Arc, Mutex},
+    marker::PhantomData,
+    cell::Cell,
+};
 
 fn main() {
     let t1 = thread::spawn(f);
@@ -12,6 +17,8 @@ fn main() {
     pass_closure_to_thread();
     get_a_value_from_thread();
     scoped_threads();
+    using_arc();
+    mutex_in_practice();
 }
 
 fn f() {
@@ -60,4 +67,44 @@ fn scoped_threads() {
             }
         });
     })
+}
+
+// Can't use Rc with threads, must use Arc
+fn using_arc() {
+    let a = Arc::new([1, 2, 3]);
+
+    thread::spawn({
+        // using 'let' inside of this scope allows us to keep
+        // the code clean and not litter it with clone statements
+        // and variable definitions
+        let a = a.clone();
+        move || {
+            println!("Using arc {:?}", a);
+            dbg!(a)
+        }
+    }).join().unwrap();
+}
+
+#[allow(dead_code)]
+struct X {
+    handle: i32,
+    // X is not Sync anymore, because PhantomData is not sync
+    _not_sync: PhantomData<Cell<()>>,
+}
+
+fn mutex_in_practice() {
+    let n = Mutex::new(0);
+
+    thread::scope(|s| {
+        for _ in 0..10 {
+            s.spawn(|| {
+                let mut guard = n.lock().unwrap();
+                for _ in 0..100 {
+                    *guard += 1;
+                }
+            });
+        }
+    });
+
+    assert_eq!(n.into_inner().unwrap(), 1000);
 }
