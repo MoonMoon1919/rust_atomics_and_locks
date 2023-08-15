@@ -1,8 +1,10 @@
 use std::{
     thread,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Condvar},
     marker::PhantomData,
     cell::Cell,
+    collections::VecDeque,
+    time::Duration,
 };
 
 fn main() {
@@ -19,6 +21,7 @@ fn main() {
     scoped_threads();
     using_arc();
     mutex_in_practice();
+    thread_parking();
 }
 
 fn f() {
@@ -107,4 +110,33 @@ fn mutex_in_practice() {
     });
 
     assert_eq!(n.into_inner().unwrap(), 1000);
+}
+
+fn thread_parking() {
+    let queue = Mutex::new(VecDeque::new());
+    let not_empty = Condvar::new();
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            loop {
+                let mut q = queue.lock().unwrap();
+                let item = loop {
+                    if let Some(item) = q.pop_front() {
+                        break item;
+                    } else {
+                        q = not_empty.wait(q).unwrap();
+                    }
+                };
+                drop(q);
+                dbg!(item);
+            }
+        });
+
+        // Producing thread
+        for i in 0..10 {
+            queue.lock().unwrap().push_back(i);
+            not_empty.notify_one();
+            thread::sleep(Duration::from_secs(1));
+        }
+    })
 }
